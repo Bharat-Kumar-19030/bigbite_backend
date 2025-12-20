@@ -27,38 +27,53 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
-// Configure Socket.IO (CORS origins handled below)
+// CORS - support single or comma-separated multiple FRONTEND_URLs
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174,https://bigbitefrontend-sigma.vercel.app,https://bigbite-frontend-sigma.vercel.app,https://bigbite-frontend.onrender.com,https://bigbite-backend.onrender.com')
+  .split(',')
+  .map((u) => u.trim());
+
+console.log('🔧 CORS Allowed Origins:', allowedOrigins);
+console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
+
+// Configure Socket.IO with same CORS as Express
 export const io = new Server(httpServer, {
   cors: {
-    origin: (origin, callback) => callback(null, true),
+    origin: (origin, callback) => {
+      // allow requests with no origin like mobile apps or curl
+      if (!origin) {
+        console.log('🔌 Socket.IO: Allowing connection with no origin');
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        console.log('🔌 Socket.IO: Allowing origin:', origin);
+        return callback(null, true);
+      }
+
+      console.error('🔌 Socket.IO: Blocking origin:', origin);
+      return callback(new Error(`Socket.IO CORS: Origin ${origin} not allowed`), false);
+    },
     credentials: true,
   },
 });
-
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Cookie parser
-app.use(cookieParser());
-
-// Trust proxy when behind a reverse proxy (Heroku/nginx) so secure cookies work
-if (process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
-
-// CORS - support single or comma-separated multiple FRONTEND_URLs
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,https://bigbitefrontend-sigma.vercel.app')
-  .split(',')
-  .map((u) => u.trim());
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // allow requests with no origin like mobile apps or curl
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('CORS policy: Origin not allowed'), false);
+      if (!origin) {
+        console.log('🔧 CORS: Allowing request with no origin');
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        console.log('🔧 CORS: Allowing origin:', origin);
+        return callback(null, true);
+      }
+
+      console.error('🔧 CORS: Blocking origin:', origin);
+      console.error('🔧 CORS: Allowed origins:', allowedOrigins);
+      return callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
     },
     credentials: true,
   })
