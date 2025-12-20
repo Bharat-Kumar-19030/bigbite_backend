@@ -142,6 +142,14 @@ router.post('/chat', protect, async (req, res) => {
     let aiResponse = '';
 
     console.log('Making Gemini API call, max attempts:', maxAttempts);
+    
+    if (maxAttempts === 0) {
+      console.error('No Gemini API keys configured');
+      return res.status(500).json({
+        success: false,
+        message: 'AI assistant is not available. Please contact support.'
+      });
+    }
 
     while (attempts < maxAttempts) {
       try {
@@ -156,13 +164,17 @@ router.post('/chat', protect, async (req, res) => {
         console.log(`Gemini API response status: ${response.status}`);
 
         if (!response.ok) {
-          if (response.status === 429 || response.status === 403) {
+          const errorText = await response.text();
+          console.log(`Gemini API error response:`, errorText);
+          
+          if (response.status === 429 || response.status === 403 || response.status === 400) {
             if (switchToNextKey()) {
               attempts++;
+              console.log(`Switching to next API key due to error ${response.status}`);
               continue;
             }
           }
-          throw new Error(`Gemini API error: ${response.status}`);
+          throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
@@ -173,12 +185,12 @@ router.post('/chat', protect, async (req, res) => {
 
       } catch (error) {
         console.error(`Attempt ${attempts + 1} failed:`, error.message);
-        if ((error.message.includes('429') || error.message.includes('403')) && switchToNextKey()) {
+        if ((error.message.includes('429') || error.message.includes('403') || error.message.includes('400')) && switchToNextKey()) {
           attempts++;
           continue;
         }
         aiResponse = attempts >= maxAttempts - 1 ?
-          'Sorry, the AI assistant is currently experiencing issues. Please try again later.' :
+          'Sorry, the AI assistant is currently experiencing issues. Please try again later or contact support if the problem persists.' :
           'Sorry, I encountered an error. Please try again.';
         break;
       }
