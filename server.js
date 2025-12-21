@@ -45,6 +45,22 @@ export const io = new Server(httpServer, {
         return callback(null, true);
       }
 
+      // In production, allow common Vercel and Render domains
+      if (isProduction) {
+        const allowedDomains = [
+          'vercel.app',
+          'onrender.com',
+          'localhost',
+          '127.0.0.1'
+        ];
+
+        const isAllowedDomain = allowedDomains.some(domain => origin.includes(domain));
+        if (isAllowedDomain) {
+          console.log('🔌 Socket.IO: Allowing production origin:', origin);
+          return callback(null, true);
+        }
+      }
+
       if (allowedOrigins.includes(origin)) {
         console.log('🔌 Socket.IO: Allowing origin:', origin);
         return callback(null, true);
@@ -57,6 +73,18 @@ export const io = new Server(httpServer, {
   },
 });
 
+// CORS - support single or comma-separated multiple FRONTEND_URLs
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174,https://bigbitefrontend-sigma.vercel.app,https://bigbite-frontend-sigma.vercel.app,https://bigbite-frontend.onrender.com,https://bigbite-backend.onrender.com')
+  .split(',')
+  .map((u) => u.trim());
+
+console.log('🔧 CORS Allowed Origins:', allowedOrigins);
+console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
+console.log('🔧 Current NODE_ENV:', process.env.NODE_ENV);
+
+// For production, be more permissive with CORS
+const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER;
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -66,16 +94,36 @@ app.use(
         return callback(null, true);
       }
 
+      // In production, allow common Vercel and Render domains
+      if (isProduction) {
+        const allowedDomains = [
+          'vercel.app',
+          'onrender.com',
+          'localhost',
+          '127.0.0.1'
+        ];
+
+        const isAllowedDomain = allowedDomains.some(domain => origin.includes(domain));
+        if (isAllowedDomain) {
+          console.log('🔧 CORS: Allowing production origin:', origin);
+          return callback(null, true);
+        }
+      }
+
+      // Check against configured allowed origins
       if (allowedOrigins.includes(origin)) {
-        console.log('🔧 CORS: Allowing origin:', origin);
+        console.log('🔧 CORS: Allowing configured origin:', origin);
         return callback(null, true);
       }
 
       console.error('🔧 CORS: Blocking origin:', origin);
       console.error('🔧 CORS: Allowed origins:', allowedOrigins);
+      console.error('🔧 CORS: Is production:', isProduction);
       return callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   })
 );
 // app.use(cors())
