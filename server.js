@@ -32,24 +32,7 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http:
   .split(',')
   .map((u) => u.trim());
 
-// Always allow localhost origins for development
-const developmentOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174'
-];
-
-// Always allow deployed frontend domains
-const productionOrigins = [
-  'https://bigbitefrontend-sigma.vercel.app',
-  'https://bigbite-frontend-sigma.vercel.app',
-  'https://bigbite-frontend.onrender.com'
-];
-
-const allAllowedOrigins = [...allowedOrigins, ...developmentOrigins, ...productionOrigins];
-
-console.log('🔧 CORS Allowed Origins:', allAllowedOrigins);
+console.log('🔧 CORS Allowed Origins:', allowedOrigins);
 console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
 
 // Configure Socket.IO with same CORS as Express
@@ -62,26 +45,28 @@ export const io = new Server(httpServer, {
         return callback(null, true);
       }
 
-      // Check against all allowed origins
-      if (allAllowedOrigins.includes(origin)) {
+      // In production, allow common Vercel and Render domains
+      if (isProduction) {
+        const allowedDomains = [
+          'vercel.app',
+          'onrender.com',
+          'localhost',
+          '127.0.0.1'
+        ];
+
+        const isAllowedDomain = allowedDomains.some(domain => origin.includes(domain));
+        if (isAllowedDomain) {
+          console.log('🔌 Socket.IO: Allowing production origin:', origin);
+          return callback(null, true);
+        }
+      }
+
+      if (allowedOrigins.includes(origin)) {
         console.log('🔌 Socket.IO: Allowing origin:', origin);
         return callback(null, true);
       }
 
-      // Additional check for localhost patterns
-      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-        console.log('🔌 Socket.IO: Allowing localhost origin:', origin);
-        return callback(null, true);
-      }
-
-      // Allow Vercel and Render preview domains
-      if (origin.includes('vercel.app') || origin.includes('onrender.com')) {
-        console.log('🔌 Socket.IO: Allowing preview domain:', origin);
-        return callback(null, true);
-      }
-
       console.error('🔌 Socket.IO: Blocking origin:', origin);
-      console.error('🔌 Socket.IO: Allowed origins:', allAllowedOrigins);
       return callback(new Error(`Socket.IO CORS: Origin ${origin} not allowed`), false);
     },
     credentials: true,
@@ -100,26 +85,30 @@ app.use(
         return callback(null, true);
       }
 
-      // Check against all allowed origins
-      if (allAllowedOrigins.includes(origin)) {
+      // In production, allow common Vercel and Render domains
+      if (isProduction) {
+        const allowedDomains = [
+          'vercel.app',
+          'onrender.com',
+          'localhost',
+          '127.0.0.1'
+        ];
+
+        const isAllowedDomain = allowedDomains.some(domain => origin.includes(domain));
+        if (isAllowedDomain) {
+          console.log('🔧 CORS: Allowing production origin:', origin);
+          return callback(null, true);
+        }
+      }
+
+      // Check against configured allowed origins
+      if (allowedOrigins.includes(origin)) {
         console.log('🔧 CORS: Allowing configured origin:', origin);
         return callback(null, true);
       }
 
-      // Additional check for localhost patterns
-      if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-        console.log('🔧 CORS: Allowing localhost origin:', origin);
-        return callback(null, true);
-      }
-
-      // Allow Vercel and Render preview domains
-      if (origin.includes('vercel.app') || origin.includes('onrender.com')) {
-        console.log('🔧 CORS: Allowing preview domain:', origin);
-        return callback(null, true);
-      }
-
       console.error('🔧 CORS: Blocking origin:', origin);
-      console.error('🔧 CORS: Allowed origins:', allAllowedOrigins);
+      console.error('🔧 CORS: Allowed origins:', allowedOrigins);
       console.error('🔧 CORS: Is production:', isProduction);
       return callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
     },
