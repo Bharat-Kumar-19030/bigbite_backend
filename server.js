@@ -73,15 +73,6 @@ export const io = new Server(httpServer, {
   },
 });
 
-// CORS - support single or comma-separated multiple FRONTEND_URLs
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173,http://localhost:5174,https://bigbitefrontend-sigma.vercel.app,https://bigbite-frontend-sigma.vercel.app,https://bigbite-frontend.onrender.com,https://bigbite-backend.onrender.com')
-  .split(',')
-  .map((u) => u.trim());
-
-console.log('🔧 CORS Allowed Origins:', allowedOrigins);
-console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
-console.log('🔧 Current NODE_ENV:', process.env.NODE_ENV);
-
 // For production, be more permissive with CORS
 const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER;
 
