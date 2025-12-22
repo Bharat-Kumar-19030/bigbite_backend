@@ -31,7 +31,8 @@ const initializeRazorpay = () => {
 };
 
 // POST /api/payment/create-order - Create Razorpay order
-router.post('/create-order', protect, async (req, res) => {
+// Can be called with or without auth (for approved site)
+router.post('/create-order', async (req, res) => {
   try {
     // Initialize Razorpay on first use
     initializeRazorpay();
@@ -43,10 +44,10 @@ router.post('/create-order', protect, async (req, res) => {
       });
     }
     
-    const { amount } = req.body; // amount should be in rupees from frontend
-    const customerId = req.user.id;
+    const { amount, referenceId } = req.body; // amount in rupees, referenceId is order ID
+    const customerId = req.user?.id || 'guest';
 
-    console.log('💳 Creating payment order for amount:', amount);
+    console.log('💳 Creating payment order for amount:', amount, 'ref:', referenceId);
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
@@ -58,8 +59,8 @@ router.post('/create-order', protect, async (req, res) => {
     // Convert amount to paise (Razorpay requires amount in paise)
     const amountInPaise = Math.round(amount * 100);
 
-    // Generate unique receipt ID
-    const receiptId = `edu_proj_${Date.now()}_${customerId.slice(-6)}`;
+    // Generate unique receipt ID using referenceId (order ID)
+    const receiptId = referenceId ? `edu_proj_${referenceId}` : `edu_proj_${Date.now()}_${customerId.slice(-6)}`;
 
     // STRICT COMPLIANCE: Create Razorpay order with service-based structure
     const options = {
@@ -86,6 +87,7 @@ router.post('/create-order', protect, async (req, res) => {
       currency: 'INR',
       status: 'CREATED',
       customer: customerId,
+      referenceId: referenceId, // Link to order ID
       notes: {
         category: 'service',
         purpose: 'educational project demo',
@@ -117,7 +119,8 @@ router.post('/create-order', protect, async (req, res) => {
 });
 
 // POST /api/payment/verify - Verify payment signature
-router.post('/verify', protect, async (req, res) => {
+// Can be called without auth (from approved site)
+router.post('/verify', async (req, res) => {
   try {
     // Initialize Razorpay on first use
     initializeRazorpay();
