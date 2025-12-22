@@ -34,9 +34,14 @@ const paymentSchema = new mongoose.Schema({
   
   // User Reference
   customer: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String, // Can be ObjectId or 'guest'
     required: true
+  },
+
+  // Order Reference (link to Order model)
+  referenceId: {
+    type: String,
+    default: null
   },
   
   // Service Category (for compliance)

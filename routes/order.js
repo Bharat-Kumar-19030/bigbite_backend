@@ -21,6 +21,121 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+// POST /api/orders/pending - Create pending order before payment
+router.post('/pending', async (req, res) => {
+  try {
+    const {
+      customerId,
+      restaurantId,
+      items,
+      deliveryAddress,
+      paymentMethod,
+      pricing,
+    } = req.body;
+
+    console.log('📝 Creating pending order for online payment');
+
+    // Validate required fields
+    if (!customerId || !restaurantId || !items || !deliveryAddress || !paymentMethod || !pricing) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields',
+      });
+    }
+
+    // Get restaurant details
+    const restaurant = await User.findById(restaurantId);
+    
+    if (!restaurant || restaurant.role !== 'restaurant') {
+      return res.status(404).json({
+        success: false,
+        message: 'Restaurant not found',
+      });
+    }
+
+    // Create pending order
+    const order = new Order({
+      customer: customerId,
+      restaurant: restaurantId,
+      items,
+      deliveryAddress,
+      paymentMethod,
+      paymentStatus: 'pending',
+      status: 'pending_payment',
+      ...pricing,
+    });
+
+    await order.save();
+
+    console.log('✅ Pending order created:', order._id);
+
+    res.status(201).json({
+      success: true,
+      order: {
+        _id: order._id,
+        totalAmount: order.totalAmount,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error creating pending order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create pending order',
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/orders/:orderId/confirm - Confirm order after successful payment
+router.post('/:orderId/confirm', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    console.log('✅ Confirming order after payment:', orderId);
+
+    // Find pending order
+    const order = await Order.findById(orderId);
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found',
+      });
+    }
+
+    // Verify payment
+    const payment = await Payment.findOne({ razorpay_order_id });
+    
+    if (!payment || payment.status !== 'SUCCESS') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment verification failed',
+      });
+    }
+
+    // Update order
+    order.status = 'placed';
+    order.paymentStatus = 'paid';
+    order.razorpay_payment_id = razorpay_payment_id;
+    await order.save();
+
+    console.log('✅ Order confirmed:', orderId);
+
+    res.json({
+      success: true,
+      order,
+    });
+  } catch (error) {
+    console.error('❌ Error confirming order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm order',
+      error: error.message,
+    });
+  }
+});
+
 // POST /api/orders - Place a new order
 router.post('/', async (req, res) => {
   try {
