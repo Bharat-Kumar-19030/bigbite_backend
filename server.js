@@ -39,7 +39,8 @@ export const io = new Server(httpServer, {
     origin: [
       "http://localhost:5173",
       "http://localhost:5174",
-      "https://bigbitefrontend-sigma.vercel.app"
+      "https://bigbitefrontend-sigma.vercel.app",
+      "https://bharat-kumar-19030.github.io"
     ],
     credentials: true,
   },
@@ -52,7 +53,8 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:5174",
-      "https://bigbitefrontend-sigma.vercel.app"
+      "https://bigbitefrontend-sigma.vercel.app",
+      "https://bharat-kumar-19030.github.io"
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
