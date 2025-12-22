@@ -114,13 +114,35 @@ router.post('/:orderId/confirm', async (req, res) => {
       });
     }
 
-    // Update order
-    order.status = 'placed';
+    // Update order - change from pending_payment to pending (waiting for restaurant)
+    order.status = 'pending';
     order.paymentStatus = 'paid';
     order.razorpay_payment_id = razorpay_payment_id;
     await order.save();
 
+    // Populate order details for socket emission
+    await order.populate('customer restaurant items.menuItem');
+
     console.log('✅ Order confirmed:', orderId);
+
+    // Format order data for socket emission (same format as COD orders)
+    const orderSocketData = {
+      _id: order._id,
+      orderNumber: order.orderNumber,
+      customer: order.customer,
+      restaurant: order.restaurant,
+      items: order.items,
+      totalAmount: order.totalAmount,
+      deliveryAddress: order.deliveryAddress,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      createdAt: order.createdAt,
+    };
+
+    // Emit socket event to restaurant for new order notification
+    console.log(`📡 Emitting new_order_received to restaurant_${order.restaurant._id}`);
+    io.to(`restaurant_${order.restaurant._id}`).emit('new_order_received', orderSocketData);
 
     res.json({
       success: true,
