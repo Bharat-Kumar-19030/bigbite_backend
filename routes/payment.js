@@ -34,6 +34,10 @@ const initializeRazorpay = () => {
 // Can be called with or without auth (for approved site)
 router.post('/create-order', async (req, res) => {
   try {
+    console.log('🔵 /create-order endpoint hit - NO AUTH REQUIRED');
+    console.log('🔵 Request origin:', req.headers.origin);
+    console.log('🔵 Has auth token?', !!req.cookies.token || !!req.headers.authorization);
+    
     // Initialize Razorpay on first use
     initializeRazorpay();
     
