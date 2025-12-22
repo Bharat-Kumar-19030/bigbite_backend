@@ -274,12 +274,13 @@ io.on('connection', (socket) => {
       order.acceptedAt = new Date();
       await order.save();
 
-      // Update order socket
+      // Update order socket with awaiting_rider status
       const orderSocket = activeOrdersPool.get(orderId);
       if (orderSocket) {
-        orderSocket.status = 'accepted';
+        orderSocket.status = 'awaiting_rider'; // Changed from 'accepted' to match order flow
         orderSocket.acceptedAt = new Date();
         activeOrdersPool.set(orderId, orderSocket);
+        console.log(`📦 Updated order ${orderId} status in pool to awaiting_rider`);
       }
 
       // Notify customer
@@ -510,7 +511,7 @@ async function notifyNearbyRiders(order) {
     const restaurantLon = restaurant.restaurantDetails.address.longitude;
 
     const nearbyRiders = [];
-    const MAX_DISTANCE_KM = 500; // Maximum distance to search for riders
+    const MAX_DISTANCE_KM = 1000; // Maximum distance to search for riders
     
     console.log(`\n🔍 Searching for riders within ${MAX_DISTANCE_KM}km radius...`);
     console.log(`📍 Restaurant Location: Lat ${restaurantLat}, Lon ${restaurantLon}`);

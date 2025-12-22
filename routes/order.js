@@ -797,6 +797,114 @@ router.get('/customer/:customerId', async (req, res) => {
   }
 });
 
+// GET /api/orders/available - Get all available orders from activeOrdersPool
+router.get('/available', async (req, res) => {
+  try {
+    const { latitude, longitude } = req.query;
+    const MAX_DISTANCE_KM = 1000;
+    
+    console.log(`📦 Fetching available orders from pool (${activeOrdersPool.size} total)`);
+    console.log(`📍 Rider location: ${latitude}, ${longitude}`);
+
+    // Get orders from activeOrdersPool that are awaiting riders
+    const availableOrdersFromPool = [];
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+
+    for (const [orderId, orderData] of activeOrdersPool.entries()) {
+      // Only include orders awaiting riders and created within last 10 minutes
+      if (orderData.status === 'awaiting_rider' && orderData.createdAt >= tenMinutesAgo) {
+        availableOrdersFromPool.push(orderId);
+      }
+    }
+
+    console.log(`✅ Found ${availableOrdersFromPool.length} awaiting_rider orders in pool`);
+
+    if (availableOrdersFromPool.length === 0) {
+      return res.json({
+        success: true,
+        orders: [],
+      });
+    }
+
+    // Fetch full order details from database
+    const orders = await Order.find({ 
+      _id: { $in: availableOrdersFromPool }
+    })
+      .populate([
+        { path: 'customer', select: 'name phone address' },
+        { path: 'restaurant', select: 'restaurantDetails name' },
+        { path: 'items.menuItem', select: 'name price image' },
+      ])
+      .sort({ createdAt: -1 });
+
+    console.log(`📥 Populated ${orders.length} orders from database`);
+
+    let filteredOrders = orders;
+
+    // If rider location is provided, filter by distance
+    if (latitude && longitude) {
+      const riderLat = parseFloat(latitude);
+      const riderLon = parseFloat(longitude);
+
+      console.log(`🔍 Filtering orders within ${MAX_DISTANCE_KM}km radius`);
+
+      filteredOrders = orders.filter(order => {
+        const restaurant = order.restaurant;
+        if (!restaurant?.restaurantDetails?.address?.latitude || !restaurant?.restaurantDetails?.address?.longitude) {
+          console.log(`⚠️ Order ${order.orderNumber}: Missing restaurant coordinates`);
+          return false;
+        }
+
+        const distance = calculateDistance(
+          riderLat,
+          riderLon,
+          restaurant.restaurantDetails.address.latitude,
+          restaurant.restaurantDetails.address.longitude
+        );
+
+        const withinRange = distance <= MAX_DISTANCE_KM;
+        console.log(`📦 Order ${order.orderNumber}: ${distance.toFixed(2)}km - ${withinRange ? '✅ Within range' : '❌ Too far'}`);
+
+        return withinRange;
+      });
+
+      console.log(`✅ ${filteredOrders.length} orders within ${MAX_DISTANCE_KM}km radius`);
+    }
+
+    // Format orders for rider view
+    const formattedOrders = filteredOrders.map(order => ({
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      restaurantName: order.restaurant?.restaurantDetails?.kitchenName || order.restaurant?.name || 'Unknown',
+      restaurantAddress: order.restaurant?.restaurantDetails?.address,
+      customerName: order.customer?.name,
+      customerPhone: order.customer?.phone,
+      deliveryAddress: order.deliveryAddress,
+      totalAmount: order.totalAmount,
+      deliveryFee: order.deliveryFee,
+      items: order.items,
+      status: order.status,
+      createdAt: order.createdAt,
+      pickupPin: order.pickupPin,
+      distanceToCustomer: order.distanceToCustomer,
+    }));
+
+    console.log(`📤 Returning ${formattedOrders.length} formatted orders`);
+
+    res.json({
+      success: true,
+      orders: formattedOrders,
+    });
+  } catch (error) {
+    console.error('❌ Error fetching available orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available orders',
+      error: error.message,
+    });
+  }
+});
+
 // GET /api/orders/rider/:riderId - Get rider orders
 router.get('/rider/:riderId', async (req, res) => {
   try {
