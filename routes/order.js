@@ -863,7 +863,7 @@ router.get('/available', async (req, res) => {
       filteredOrders = orders.filter(order => {
         const restaurant = order.restaurant;
         if (!restaurant?.restaurantDetails?.address?.latitude || !restaurant?.restaurantDetails?.address?.longitude) {
-          console.log(`⚠️ Order ${order.orderNumber}: Missing restaurant coordinates`);
+          console.log(`⚠️ Order ${order.orderNumber || order._id}: Missing restaurant coordinates`);
           return false;
         }
 
@@ -875,7 +875,7 @@ router.get('/available', async (req, res) => {
         );
 
         const withinRange = distance <= MAX_DISTANCE_KM;
-        console.log(`📦 Order ${order.orderNumber}: ${distance.toFixed(2)}km - ${withinRange ? '✅ Within range' : '❌ Too far'}`);
+        console.log(`📦 Order ${order.orderNumber || order._id}: ${distance.toFixed(2)}km - ${withinRange ? '✅ Within range' : '❌ Too far'}`);
 
         return withinRange;
       });
@@ -883,19 +883,6 @@ router.get('/available', async (req, res) => {
       console.log(`✅ ${filteredOrders.length} orders within ${MAX_DISTANCE_KM}km radius`);
     } else {
       console.log(`⚠️ No valid rider location provided - returning all available orders without distance filtering`);
-          riderLat,
-          riderLon,
-          restaurant.restaurantDetails.address.latitude,
-          restaurant.restaurantDetails.address.longitude
-        );
-
-        const withinRange = distance <= MAX_DISTANCE_KM;
-        console.log(`📦 Order ${order.orderNumber}: ${distance.toFixed(2)}km - ${withinRange ? '✅ Within range' : '❌ Too far'}`);
-
-        return withinRange;
-      });
-
-      console.log(`✅ ${filteredOrders.length} orders within ${MAX_DISTANCE_KM}km radius`);
     }
 
     // Format orders for rider view

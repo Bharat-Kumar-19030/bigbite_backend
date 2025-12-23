@@ -147,6 +147,10 @@ io.on('connection', (socket) => {
       socket.join(`user_${userId}`);
       socket.join(`rider_${userId}`);
       console.log(`✅ Rider ${userId} authenticated and joined rider room`);
+      
+      // Count total authenticated riders (all riders currently in rider rooms)
+      const authenticatedRiders = Array.from(io.sockets.sockets.values()).filter(s => s.riderId).length;
+      console.log(`👥 Total authenticated riders: ${authenticatedRiders}, Active riders in pool: ${activeRidersPool.size}`);
     } catch (error) {
       console.error('❌ Error in rider_authenticate:', error);
     }
