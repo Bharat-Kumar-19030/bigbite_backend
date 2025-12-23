@@ -185,16 +185,32 @@ io.on('connection', (socket) => {
 
       // Check if rider already exists in pool to preserve activeOrders
       const existingRiderData = activeRidersPool.get(riderId);
-      const existingActiveOrders = existingRiderData?.activeOrders || [];
+      let activeOrdersList = existingRiderData?.activeOrders || [];
 
-      // Add rider to active pool (preserve activeOrders if already exists)
+      // If rider is rejoining (not in pool or empty activeOrders), restore from database
+      if (!existingRiderData || activeOrdersList.length === 0) {
+        const activeOrders = await Order.find({
+          rider: riderId,
+          status: { 
+            $in: ['rider_assigned', 'preparing', 'ready', 'picked_up', 'on_the_way'] 
+          }
+        }).select('_id');
+        
+        activeOrdersList = activeOrders.map(order => order._id.toString());
+        console.log(`🔄 Restored ${activeOrdersList.length} active orders from database`);
+        if (activeOrdersList.length > 0) {
+          console.log(`📋 Order IDs: ${activeOrdersList.join(', ')}`);
+        }
+      }
+
+      // Add rider to active pool with restored activeOrders
       activeRidersPool.set(riderId, {
         socketId: socket.id,
         riderId,
         name: rider.name,
         phone: rider.phone,
         coordinates: riderCoords,
-        activeOrders: existingActiveOrders, // Preserve existing orders
+        activeOrders: activeOrdersList, // Restored from DB or preserved from memory
         lastUpdate: new Date(),
       });
 
@@ -202,7 +218,7 @@ io.on('connection', (socket) => {
       socket.join(`rider_${riderId}`);
       
       console.log(`🏍️ Rider ${rider.name} (${riderId}) joined active pool at [${riderCoords.latitude}, ${riderCoords.longitude}]`);
-      console.log(`📦 Active orders for this rider: ${existingActiveOrders.length}`);
+      console.log(`📦 Active orders for this rider: ${activeOrdersList.length}`);
       console.log(`📊 Total active riders: ${activeRidersPool.size}`);
       socket.emit('joined_pool', { message: 'Successfully joined active riders pool' });
       
