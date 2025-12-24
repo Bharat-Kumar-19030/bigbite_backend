@@ -84,12 +84,13 @@ app.use(
     saveUninitialized: false,
     proxy: process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production',
     cookie: {
-    httpOnly: true,
-    secure: true,      // Render is HTTPS
-    sameSite: "none",  // REQUIRED for cross-origin cookies
-    maxAge: 24 * 60 * 60 * 1000,
-}
-
+      httpOnly: true,
+      // For production (HTTPS), use secure + sameSite none for cross-origin
+      // For localhost (HTTP), use secure false + sameSite lax
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+    }
   })
 );
 
@@ -684,6 +685,8 @@ async function notifyRiderOfAvailableOrders(riderId, riderCoords) {
           restaurantName: restaurant.restaurantDetails.kitchenName,
           restaurantAddress: restaurant.restaurantDetails.address,
           deliveryAddress: order.deliveryAddress,
+          customerName: order.customer?.name,
+          customerPhone: order.customer?.phone,
           totalAmount: order.totalAmount,
           distance: distance.toFixed(2),
           distanceToCustomer: distanceToCustomer.toFixed(2),
@@ -778,6 +781,8 @@ async function notifyNearbyRiders(order) {
         restaurantName: restaurant.restaurantDetails.kitchenName,
         restaurantAddress: restaurant.restaurantDetails.address,
         deliveryAddress: order.deliveryAddress,
+        customerName: order.customer?.name,
+        customerPhone: order.customer?.phone,
         totalAmount: order.totalAmount,
         distance: distance.toFixed(2), // Distance from rider to restaurant
         distanceToCustomer: distanceToCustomer.toFixed(2), // Distance from restaurant to customer
