@@ -39,6 +39,7 @@ const getAllowedOrigins = () => {
     process.env.FRONTEND_URL,
     'http://localhost:5173',
     'http://localhost:5174',
+    'https://bharat-kumar-19030.github.io', // GitHub Pages - Payment site
   ].filter(Boolean); // Remove undefined values
   
   console.log('✅ Allowed CORS origins:', origins);
