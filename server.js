@@ -78,7 +78,8 @@ app.use(express.json())
 const sessionStore = MongoStore.create({
   mongoUrl: process.env.MONGODB_URI,
   collectionName: process.env.SESSIONS_COLLECTION || 'sessions',
-  ttl: 24 * 60 * 60, // 1 day
+  ttl: 7 * 24 * 60 * 60, // 7 days (must match cookie maxAge)
+  touchAfter: 24 * 60 * 60, // Lazy update - only update session once per 24 hours
 });
 
 app.use(
@@ -94,7 +95,8 @@ app.use(
       // For localhost (HTTP), use secure false + sameSite lax
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days instead of 1 day
+      domain: process.env.NODE_ENV === 'production' ? undefined : undefined, // Let browser handle domain
     }
   })
 );

@@ -159,8 +159,16 @@ router.get('/me', protect, async (req, res) => {
       });
     }
 
+    // Generate a fresh token with extended expiry (helps with session persistence)
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' } // 7 days to match session duration
+    );
+
     res.status(200).json({
       success: true,
+      token, // Send refreshed token
       user: {
         id: user._id,
         name: user.name,
