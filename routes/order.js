@@ -340,6 +340,7 @@ router.post('/', async (req, res) => {
     
     const orderSocketData = {
       orderId: order._id.toString(),
+      orderNumber: order.orderNumber,
       customerId,
       restaurantId,
       customerName: order.customer.name,

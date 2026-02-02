@@ -74,6 +74,15 @@ app.options('*', cors()); // Enable pre-flight for all routes(means all routes w
 app.use(cookieParser()); 
 app.use(express.json())
 
+if (!process.env.SESSION_SECRET) {
+  console.error('FATAL: SESSION_SECRET is not set');
+  process.exit(1);
+}
+
+if (!process.env.MONGODB_URI) {
+  console.error('FATAL: MONGODB_URI is not set');
+  process.exit(1);
+}
 // Express session with MongoDB-backed store (recommended for production)
 const sessionStore = MongoStore.create({
   mongoUrl: process.env.MONGODB_URI,
