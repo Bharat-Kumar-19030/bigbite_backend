@@ -7,10 +7,6 @@ import MongoStore from 'connect-mongo';
 import mongoose from 'mongoose';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-
-// Load env vars FIRST before any other imports that use them
-dotenv.config();
-
 import passport from './config/passport.js';
 import { configurePassport } from './config/passport.js';
 // Import models
@@ -25,36 +21,26 @@ import riderRoutes from "./routes/rider.js";
 import ratingRoutes from "./routes/rating.js";
 import wishlistRoutes from "./routes/wishlist.js";
 import chatbotRoutes from "./routes/chatbot.js";
-import paymentRoutes from "./routes/payment.js";
 
+// Load env vars
+dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
 
 console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
-
-// Get allowed origins from environment variables
-const getAllowedOrigins = () => {
-  const origins = [
-    process.env.FRONTEND_URL,
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'https://bharat-kumar-19030.github.io', // GitHub Pages - Payment site
-  ].filter(Boolean); // Remove undefined values
-  
-  console.log('✅ Allowed CORS origins:', origins);
-  return origins;
-};
-
-const allowedOrigins = getAllowedOrigins();
-
+// For production, be more permissive with CORS
 // Configure Socket.IO with same CORS as Express
 export const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://bigbitefoods.vercel.app"
+    ],
     credentials: true,
   },
-  transports: ["websocket", "polling"], // Support both transports for reliability
+  transports: ["websocket"],   //  REQUIRED
   pingInterval: 25000,
   pingTimeout: 20000,
 });
@@ -63,7 +49,11 @@ export const io = new Server(httpServer, {
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://bigbitefoods.vercel.app"
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   })
@@ -87,39 +77,25 @@ if (!process.env.MONGODB_URI) {
 const sessionStore = MongoStore.create({
   mongoUrl: process.env.MONGODB_URI,
   collectionName: process.env.SESSIONS_COLLECTION || 'sessions',
-  ttl: 7 * 24 * 60 * 60, // 7 days (must match cookie maxAge)
-  touchAfter: 24 * 60 * 60, // Lazy update - only update session once per 24 hours
+  ttl: 24 * 60 * 60, // 1 day
 });
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'change_this_secret',
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     proxy: process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production',
     cookie: {
-      httpOnly: true,
-      // For production (HTTPS), use secure + sameSite none for cross-origin
-      // For localhost (HTTP), use secure false + sameSite lax
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days instead of 1 day
-      domain: process.env.NODE_ENV === 'production' ? undefined : undefined, // Let browser handle domain
-    }
+    httpOnly: true,
+    secure: true,      // Render is HTTPS
+    sameSite: "none",  // REQUIRED for cross-origin cookies
+    maxAge: 24 * 60 * 60 * 1000,
+}
+
   })
 );
-
-// Validate required environment variables
-if (!process.env.SESSION_SECRET) {
-  console.error('❌ FATAL: SESSION_SECRET is not set in environment variables');
-  process.exit(1);
-}
-
-if (!process.env.MONGODB_URI) {
-  console.error('❌ FATAL: MONGODB_URI is not set in environment variables');
-  process.exit(1);
-}
 
 // Passport middleware
 app.use(passport.initialize());
@@ -148,7 +124,6 @@ app.use("/api/rider", riderRoutes);
 app.use("/api/rating", ratingRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/chatbot", chatbotRoutes);
-app.use("/api/payment", paymentRoutes);
 
 // Active riders pool - stores rider socket connections with live data
 export const activeRidersPool = new Map();
@@ -178,10 +153,6 @@ io.on('connection', (socket) => {
       socket.join(`user_${userId}`);
       socket.join(`rider_${userId}`);
       console.log(`✅ Rider ${userId} authenticated and joined rider room`);
-      
-      // Count total authenticated riders (all riders currently in rider rooms)
-      const authenticatedRiders = Array.from(io.sockets.sockets.values()).filter(s => s.riderId).length;
-      console.log(`👥 Total authenticated riders: ${authenticatedRiders}, Active riders in pool: ${activeRidersPool.size}`);
     } catch (error) {
       console.error('❌ Error in rider_authenticate:', error);
     }
@@ -197,51 +168,19 @@ io.on('connection', (socket) => {
       }
 
       // Use coordinates from the emit or fallback to database
-      let riderCoords = coordinates;
-      
-      // If coordinates not provided or invalid, use database location
-      if (!riderCoords || !riderCoords.latitude || !riderCoords.longitude) {
-        riderCoords = {
-          latitude: rider.riderDetails?.currentLocation?.latitude,
-          longitude: rider.riderDetails?.currentLocation?.longitude,
-        };
-      }
-      
-      // Final validation - if still no coordinates, reject
-      if (!riderCoords.latitude || !riderCoords.longitude) {
-        console.error(`❌ Rider ${riderId} has no valid coordinates`);
-        socket.emit('error', { message: 'Location required to join rider pool. Please enable location services.' });
-        return;
-      }
+      const riderCoords = coordinates || {
+        latitude: rider.riderDetails?.currentLocation?.latitude || 0,
+        longitude: rider.riderDetails?.currentLocation?.longitude || 0,
+      };
 
-      // Check if rider already exists in pool to preserve activeOrders
-      const existingRiderData = activeRidersPool.get(riderId);
-      let activeOrdersList = existingRiderData?.activeOrders || [];
-
-      // If rider is rejoining (not in pool or empty activeOrders), restore from database
-      if (!existingRiderData || activeOrdersList.length === 0) {
-        const activeOrders = await Order.find({
-          rider: riderId,
-          status: { 
-            $in: ['rider_assigned', 'preparing', 'ready', 'picked_up', 'on_the_way'] 
-          }
-        }).select('_id');
-        
-        activeOrdersList = activeOrders.map(order => order._id.toString());
-        console.log(`🔄 Restored ${activeOrdersList.length} active orders from database`);
-        if (activeOrdersList.length > 0) {
-          console.log(`📋 Order IDs: ${activeOrdersList.join(', ')}`);
-        }
-      }
-
-      // Add rider to active pool with restored activeOrders
+      // Add rider to active pool
       activeRidersPool.set(riderId, {
         socketId: socket.id,
         riderId,
         name: rider.name,
         phone: rider.phone,
         coordinates: riderCoords,
-        activeOrders: activeOrdersList, // Restored from DB or preserved from memory
+        activeOrders: [],
         lastUpdate: new Date(),
       });
 
@@ -249,12 +188,8 @@ io.on('connection', (socket) => {
       socket.join(`rider_${riderId}`);
       
       console.log(`🏍️ Rider ${rider.name} (${riderId}) joined active pool at [${riderCoords.latitude}, ${riderCoords.longitude}]`);
-      console.log(`📦 Active orders for this rider: ${activeOrdersList.length}`);
       console.log(`📊 Total active riders: ${activeRidersPool.size}`);
       socket.emit('joined_pool', { message: 'Successfully joined active riders pool' });
-      
-      // Check for any existing orders awaiting riders and notify this rider
-      await notifyRiderOfAvailableOrders(riderId, riderCoords);
     } catch (error) {
       console.error('❌ Error in rider_join_pool:', error);
     }
@@ -273,65 +208,31 @@ io.on('connection', (socket) => {
   });
 
   // Rider live location update (every 10 seconds, not saved to DB)
-  socket.on('rider_location_update', async ({ riderId, coordinates }) => {
+  socket.on('rider_location_update', ({ riderId, coordinates }) => {
     try {
-      console.log(`📍 ===== RIDER LOCATION UPDATE =====`);
-      console.log(`   Rider ID: ${riderId}`);
-      console.log(`   Coordinates: [${coordinates.latitude}, ${coordinates.longitude}]`);
-      
       const riderData = activeRidersPool.get(riderId);
-      if (!riderData) {
-        console.log(`   ❌ Rider not found in activeRidersPool`);
-        return;
-      }
-      
-      console.log(`   ✅ Rider found in pool`);
-      console.log(`   Active Orders: ${riderData.activeOrders?.length || 0}`);
-      if (riderData.activeOrders && riderData.activeOrders.length > 0) {
-        console.log(`   Order IDs: ${riderData.activeOrders.join(', ')}`);
-      }
-      
-      riderData.coordinates = coordinates;
-      riderData.lastUpdate = new Date();
-      activeRidersPool.set(riderId, riderData);
+      if (riderData) {
+        riderData.coordinates = coordinates;
+        riderData.lastUpdate = new Date();
+        activeRidersPool.set(riderId, riderData);
 
-      // Update rider location in all active orders in database
-      if (riderData.activeOrders && riderData.activeOrders.length > 0) {
-        await Order.updateMany(
-          { _id: { $in: riderData.activeOrders } },
-          { 
-            $set: { 
-              'riderLocation.latitude': coordinates.latitude,
-              'riderLocation.longitude': coordinates.longitude,
-              'riderLocation.lastUpdated': new Date()
-            }
+        // Broadcast location to all active orders this rider is handling
+        riderData.activeOrders.forEach(orderId => {
+          const orderSocket = activeOrdersPool.get(orderId);
+          if (orderSocket) {
+            orderSocket.riderCoordinates = coordinates;
+            activeOrdersPool.set(orderId, orderSocket);
+            
+            // Emit to customer tracking the order
+            io.to(`order_${orderId}`).emit('rider_location_live', {
+              orderId,
+              latitude: coordinates.latitude,
+              longitude: coordinates.longitude,
+              timestamp: new Date(),
+            });
           }
-        );
-        console.log(`   💾 Updated location in database for ${riderData.activeOrders.length} orders`);
-      }
-
-      // Broadcast location to all active orders this rider is handling
-      let broadcastCount = 0;
-      riderData.activeOrders.forEach(orderId => {
-        const orderSocket = activeOrdersPool.get(orderId);
-        if (orderSocket) {
-          orderSocket.riderCoordinates = coordinates;
-          activeOrdersPool.set(orderId, orderSocket);
-        }
-        
-        // Emit to customer tracking the order
-        io.to(`order_${orderId}`).emit('rider_location_live', {
-          orderId,
-          latitude: coordinates.latitude,
-          longitude: coordinates.longitude,
-          timestamp: new Date(),
         });
-        broadcastCount++;
-        console.log(`   📤 Broadcast to order_${orderId}`);
-      });
-      
-      console.log(`   ✅ Location broadcast to ${broadcastCount} order rooms`);
-      console.log(`📍 ================================`);
+      }
     } catch (error) {
       console.error('❌ Error in rider_location_update:', error);
     }
@@ -375,33 +276,29 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Save status as 'awaiting_rider' in database so it appears in rider's available orders
-      order.status = 'awaiting_rider';
+      order.status = 'accepted';
       order.acceptedAt = new Date();
       await order.save();
 
-      console.log(`✅ Restaurant accepted order ${orderId}, saved to DB with status: awaiting_rider`);
-
-      // Update order socket with awaiting_rider status
+      // Update order socket
       const orderSocket = activeOrdersPool.get(orderId);
       if (orderSocket) {
-        orderSocket.status = 'awaiting_rider'; // Changed from 'accepted' to match order flow
+        orderSocket.status = 'accepted';
         orderSocket.acceptedAt = new Date();
         activeOrdersPool.set(orderId, orderSocket);
-        console.log(`📦 Updated order ${orderId} status in pool to awaiting_rider`);
       }
 
       // Notify customer
       io.to(`order_${orderId}`).emit('order_status_changed', {
         orderId,
-        status: 'awaiting_rider',
+        status: 'accepted',
         message: 'Restaurant accepted your order',
       });
 
       // Notify restaurant to update their UI
       io.to(`restaurant_${restaurantId}`).emit('order_status_changed', {
         orderId,
-        status: 'awaiting_rider',
+        status: 'accepted',
         message: 'Order accepted successfully',
       });
 
@@ -437,13 +334,6 @@ io.on('connection', (socket) => {
         reason,
       });
 
-      // Notify restaurant to update their UI
-      io.to(`restaurant_${order.restaurant}`).emit('order_status_changed', {
-        orderId,
-        status: 'rejected',
-        message: 'Order rejected successfully',
-      });
-
       console.log(`❌ Restaurant rejected order: ${orderId}`);
     } catch (error) {
       console.error('❌ Error in restaurant_reject_order:', error);
@@ -454,11 +344,8 @@ io.on('connection', (socket) => {
   socket.on('rider_accept_order', async ({ orderId, riderId }) => {
     try {
       const order = await Order.findById(orderId).populate('restaurant customer rider');
-      
-      // Check if order is still available (awaiting_rider and no rider assigned yet)
-      if (!order || order.status !== 'awaiting_rider' || order.rider) {
+      if (!order || order.status !== 'accepted') {
         socket.emit('error', { message: 'Order not available' });
-        console.log(`❌ Order ${orderId} not available. Status: ${order?.status}, Rider: ${order?.rider}`);
         return;
       }
 
@@ -483,21 +370,11 @@ io.on('connection', (socket) => {
       order.acceptedAt = new Date();
       order.distanceToCustomer = distanceToCustomer;
       order.riderEarnings = riderEarnings;
-      
-      // Get rider details and location
+      await order.save();
+
+      // Get rider details
       const riderData = activeRidersPool.get(riderId);
       const riderUser = await User.findById(riderId);
-      
-      // Save rider's initial location to order if available
-      if (riderData?.coordinates) {
-        order.riderLocation = {
-          latitude: riderData.coordinates.latitude,
-          longitude: riderData.coordinates.longitude,
-          lastUpdated: new Date()
-        };
-      }
-      
-      await order.save();
 
       // Update rider's active orders
       if (riderData) {
@@ -522,26 +399,23 @@ io.on('connection', (socket) => {
         }
       });
 
-      // Notify customer via order room - only use order_accepted event
+      // Notify customer via order room
+      io.to(`order_${orderId}`).emit('order_status_changed', {
+        orderId,
+        status: 'rider_assigned',
+        message: `Rider ${riderUser?.name || 'A rider'} accepted your order!`,
+        riderName: riderUser?.name,
+        riderPhone: riderUser?.phone,
+      });
+
+      // Also emit order_accepted event for customer
       io.to(`order_${orderId}`).emit('order_accepted', {
         orderId,
         status: 'rider_assigned',
         message: `Rider ${riderUser?.name || 'A rider'} accepted your order!`,
         riderName: riderUser?.name,
         riderPhone: riderUser?.phone,
-        riderCoordinates: riderData?.coordinates, // Include rider's current location
       });
-
-      // Send initial rider location to customer for live tracking
-      if (riderData?.coordinates) {
-        io.to(`order_${orderId}`).emit('rider_location_live', {
-          orderId,
-          latitude: riderData.coordinates.latitude,
-          longitude: riderData.coordinates.longitude,
-          timestamp: new Date(),
-        });
-        console.log(`📍 Sent initial rider location to customer: ${riderData.coordinates.latitude}, ${riderData.coordinates.longitude}`);
-      }
 
       // Notify restaurant to refresh dashboard
       io.to(`restaurant_${order.restaurant._id}`).emit('order_status_changed', {
@@ -594,15 +468,8 @@ io.on('connection', (socket) => {
         activeOrdersPool.set(orderId, orderSocket);
       }
 
-      // Broadcast to customer
+      // Broadcast to all parties
       io.to(`order_${orderId}`).emit('order_status_changed', {
-        orderId,
-        status,
-        timestamp: new Date(),
-      });
-
-      // Notify restaurant to update their dashboard
-      io.to(`restaurant_${order.restaurant}`).emit('order_status_changed', {
         orderId,
         status,
         timestamp: new Date(),
@@ -652,85 +519,6 @@ io.on('connection', (socket) => {
 
 });
 
-// Helper function to notify a specific rider of available orders when they join the pool
-async function notifyRiderOfAvailableOrders(riderId, riderCoords) {
-  try {
-    const MAX_DISTANCE_KM = 1000;
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-    
-    console.log(`🔔 Checking available orders for newly joined rider ${riderId}`);
-    
-    // Get orders from activeOrdersPool that are awaiting riders
-    const availableOrderIds = [];
-    for (const [orderId, orderData] of activeOrdersPool.entries()) {
-      if (orderData.status === 'awaiting_rider' && orderData.createdAt >= tenMinutesAgo) {
-        availableOrderIds.push(orderId);
-      }
-    }
-    
-    if (availableOrderIds.length === 0) {
-      console.log('✅ No available orders to notify');
-      return;
-    }
-    
-    console.log(`📦 Found ${availableOrderIds.length} available orders, checking distances...`);
-    
-    // Fetch full order details
-    const orders = await Order.find({ _id: { $in: availableOrderIds } })
-      .populate('restaurant')
-      .populate('customer');
-    
-    // Notify rider of nearby orders
-    let notifiedCount = 0;
-    for (const order of orders) {
-      const restaurant = order.restaurant;
-      if (!restaurant?.restaurantDetails?.address?.latitude || !restaurant?.restaurantDetails?.address?.longitude) {
-        continue;
-      }
-      
-      const distance = calculateDistance(
-        riderCoords.latitude,
-        riderCoords.longitude,
-        restaurant.restaurantDetails.address.latitude,
-        restaurant.restaurantDetails.address.longitude
-      );
-      
-      if (distance <= MAX_DISTANCE_KM) {
-        const distanceToCustomer = calculateDistance(
-          restaurant.restaurantDetails.address.latitude,
-          restaurant.restaurantDetails.address.longitude,
-          order.deliveryAddress.latitude,
-          order.deliveryAddress.longitude
-        );
-        
-        const riderEarnings = order.deliveryFee > 0 
-          ? order.deliveryFee 
-          : Math.round(distanceToCustomer * 8);
-        
-        io.to(`rider_${riderId}`).emit('new_order_available', {
-          orderId: order._id,
-          restaurantName: restaurant.restaurantDetails.kitchenName,
-          restaurantAddress: restaurant.restaurantDetails.address,
-          deliveryAddress: order.deliveryAddress,
-          customerName: order.customer?.name,
-          customerPhone: order.customer?.phone,
-          totalAmount: order.totalAmount,
-          distance: distance.toFixed(2),
-          distanceToCustomer: distanceToCustomer.toFixed(2),
-          riderEarnings,
-          paymentMethod: order.paymentMethod,
-          items: order.items,
-        });
-        notifiedCount++;
-      }
-    }
-    
-    console.log(`✅ Notified rider ${riderId} of ${notifiedCount} nearby orders`);
-  } catch (error) {
-    console.error('❌ Error notifying rider of available orders:', error);
-  }
-}
-
 // Helper function to notify nearby riders
 async function notifyNearbyRiders(order) {
   try {
@@ -754,9 +542,8 @@ async function notifyNearbyRiders(order) {
     const restaurantLon = restaurant.restaurantDetails.address.longitude;
 
     const nearbyRiders = [];
-    const MAX_DISTANCE_KM = 1000; // Maximum distance to search for riders
     
-    console.log(`\n🔍 Searching for riders within ${MAX_DISTANCE_KM}km radius...`);
+    console.log(`\n🔍 Searching for riders within 200km radius...`);
     console.log(`📍 Restaurant Location: Lat ${restaurantLat}, Lon ${restaurantLon}`);
     console.log(`👥 Total active riders in pool: ${activeRidersPool.size}`);
     
@@ -772,14 +559,14 @@ async function notifyNearbyRiders(order) {
       console.log(`\n🏍️ Rider: ${riderData.name} (ID: ${riderId})`);
       console.log(`   📍 Location: Lat ${riderData.coordinates.latitude}, Lon ${riderData.coordinates.longitude}`);
       console.log(`   📏 Distance: ${distance.toFixed(2)} km`);
-      console.log(`   ${distance <= MAX_DISTANCE_KM ? '✅ Within range!' : '❌ Too far'}`);
+      console.log(`   ${distance <= 1000 ? '✅ Within range!' : '❌ Too far'}`);
 
-      if (distance <= MAX_DISTANCE_KM) {
+      if (distance <= 1000) {
         nearbyRiders.push({ riderId, riderName: riderData.name, distance });
       }
     });
 
-    console.log(`\n✅ Found ${nearbyRiders.length} riders within ${MAX_DISTANCE_KM}km:`);
+    console.log(`\n✅ Found ${nearbyRiders.length} riders within 1000km:`);
     nearbyRiders.forEach(({ riderName, distance }) => {
       console.log(`   🏍️ ${riderName} - ${distance.toFixed(2)} km away`);
     });
@@ -808,8 +595,6 @@ async function notifyNearbyRiders(order) {
         restaurantName: restaurant.restaurantDetails.kitchenName,
         restaurantAddress: restaurant.restaurantDetails.address,
         deliveryAddress: order.deliveryAddress,
-        customerName: order.customer?.name,
-        customerPhone: order.customer?.phone,
         totalAmount: order.totalAmount,
         distance: distance.toFixed(2), // Distance from rider to restaurant
         distanceToCustomer: distanceToCustomer.toFixed(2), // Distance from restaurant to customer
