@@ -40,7 +40,7 @@ export const io = new Server(httpServer, {
     ],
     credentials: true,
   },
-  transports: ["websocket"],   //  REQUIRED
+  transports: ["websocket","polling"],   //  REQUIRED
   pingInterval: 25000,
   pingTimeout: 20000,
 });
