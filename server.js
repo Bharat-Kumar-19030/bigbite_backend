@@ -29,33 +29,24 @@ const httpServer = createServer(app);
 
 
 console.log('🔧 Current FRONTEND_URL env:', process.env.FRONTEND_URL);
-// For production, be more permissive with CORS
-// Configure Socket.IO with same CORS as Express
+
+// Simple CORS configuration - allow all origins in production for maximum compatibility
 export const io = new Server(httpServer, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://bigbitefoods.vercel.app"
-    ],
+    origin: true, // Allow all origins
     credentials: true,
   },
-  transports: ["polling", "websocket"],   // Polling first, then upgrade to WebSocket
+  transports: ["polling", "websocket"],
   pingInterval: 25000,
-  pingTimeout: 20000,
+  pingTimeout: 60000,
 });
 
 
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://bigbitefoods.vercel.app"
-    ],
+    origin: true, // Allow all origins
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   })
 );
 
@@ -86,14 +77,13 @@ app.use(
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
-    proxy: process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production',
+    proxy: true,
     cookie: {
-    httpOnly: true,
-    secure: true,      // Render is HTTPS
-    sameSite: "none",  // REQUIRED for cross-origin cookies
-    maxAge: 24 * 60 * 60 * 1000,
-}
-
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    }
   })
 );
 
